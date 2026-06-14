@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+ <!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -914,18 +914,6 @@
 </style>
 </head>
 <body>
-<script>
-// SNS 버튼 초기 disabled (URL 설정 전)
-window.addEventListener('DOMContentLoaded', function() {
-  ['sns-youtube','sns-instagram','sns-naver'].forEach(function(id) {
-    const el = document.getElementById(id);
-    if (el && (el.getAttribute('href') === '#' || !el.getAttribute('href'))) {
-      el.classList.add('disabled');
-    }
-  });
-});
-</script>
-
 <!-- NAV -->
 <nav>
   <div class="nav-logo">의료전문변호사 이시우</div>
@@ -1536,14 +1524,95 @@ window.addEventListener('DOMContentLoaded', function() {
 </div><!-- admin-overlay -->
 
 <script>
-// ── CONFIG ──────────────────────────────
-const ADMIN_PW = 'nurselaw2025';  // ← 비밀번호 여기서 변경
+// ══════════════════════════════════════════════════
+//  CONFIG
+// ══════════════════════════════════════════════════
+const ADMIN_PW  = 'nurselaw2025'; // ← 비밀번호 변경 시 여기 수정
+const STORE_KEY = 'nlaw_site_data_v1';
 
-// ── OPEN / CLOSE ────────────────────────
+// ══════════════════════════════════════════════════
+//  STORAGE  (localStorage 기반 영구 저장)
+// ══════════════════════════════════════════════════
+function saveToStorage(patch) {
+  try {
+    const current = loadFromStorage();
+    const merged  = Object.assign({}, current, patch);
+    localStorage.setItem(STORE_KEY, JSON.stringify(merged));
+  } catch(e) { console.warn('storage save failed', e); }
+}
+function loadFromStorage() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch(e) { return {}; }
+}
+
+// ══════════════════════════════════════════════════
+//  APPLY SAVED DATA ON PAGE LOAD
+// ══════════════════════════════════════════════════
+function applySavedData() {
+  const d = loadFromStorage();
+
+  // 사진
+  if (d.photo) {
+    document.querySelectorAll('.hero-photo, .about-photo-frame img').forEach(img => {
+      img.src = d.photo;
+    });
+  }
+
+  // Hero 타이틀
+  if (d.heroTitle || d.heroSpan) {
+    const titleEl = document.querySelector('.hero-title');
+    if (titleEl) {
+      const lines = (d.heroTitle || '').split('\n').filter(Boolean);
+      titleEl.innerHTML = lines.map(l => l + '<br>').join('') + '<span>' + (d.heroSpan || '') + '</span>';
+    }
+  }
+  if (d.heroDesc) {
+    const descEl = document.querySelector('.hero-desc');
+    if (descEl) descEl.textContent = d.heroDesc;
+  }
+
+  // About
+  const aboutPs = document.querySelectorAll('.about-text p');
+  if (d.aboutP1 && aboutPs[0]) aboutPs[0].textContent = d.aboutP1;
+  if (d.aboutP2 && aboutPs[1]) aboutPs[1].textContent = d.aboutP2;
+  if (d.aboutP3 && aboutPs[2]) aboutPs[2].textContent = d.aboutP3;
+
+  // Contact
+  const cItems = document.querySelectorAll('.contact-item');
+  if (d.website      && cItems[0]) cItems[0].querySelector('.contact-item-value').textContent = d.website;
+  if (d.lectureTopics&& cItems[1]) cItems[1].querySelector('.contact-item-value').textContent = d.lectureTopics;
+  if (d.book         && cItems[2]) cItems[2].querySelector('.contact-item-note').textContent  = d.book;
+
+  // 인용문
+  if (d.quote) {
+    const qEl = document.querySelector('.quote-text');
+    if (qEl) qEl.innerHTML = d.quote.replace(/\n/g,'<br>');
+  }
+
+  // SNS
+  function setLink(id, url) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (url) {
+      el.href = url; el.dataset.url = url; el.classList.remove('disabled');
+    } else {
+      el.href = '#'; el.dataset.url = ''; el.classList.add('disabled');
+    }
+  }
+  setLink('sns-youtube',   d.snsYoutube   || '');
+  setLink('sns-instagram', d.snsInstagram || '');
+  setLink('sns-naver',     d.snsNaver     || '');
+}
+
+// ══════════════════════════════════════════════════
+//  OPEN / CLOSE
+// ══════════════════════════════════════════════════
 function openAdmin() {
   document.getElementById('adminOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
-  loadCurrentValues();
+  loadAdminFields();
 }
 function closeAdmin() {
   document.getElementById('adminOverlay').classList.remove('open');
@@ -1553,7 +1622,9 @@ function handleOverlayClick(e) {
   if (e.target === document.getElementById('adminOverlay')) closeAdmin();
 }
 
-// ── LOGIN ────────────────────────────────
+// ══════════════════════════════════════════════════
+//  LOGIN
+// ══════════════════════════════════════════════════
 let isLoggedIn = false;
 function doLogin() {
   const pw = document.getElementById('adminPwInput').value;
@@ -1569,7 +1640,9 @@ function doLogin() {
   }
 }
 
-// ── TABS ─────────────────────────────────
+// ══════════════════════════════════════════════════
+//  TABS
+// ══════════════════════════════════════════════════
 function switchTab(name) {
   document.querySelectorAll('.admin-tab').forEach((t,i) => {
     const tabs = ['photo','hero','about','contact','sns'];
@@ -1580,64 +1653,62 @@ function switchTab(name) {
   });
 }
 
-// ── LOAD CURRENT VALUES ──────────────────
-function loadCurrentValues() {
-  // Hero title: split into lines (excluding span)
+// ══════════════════════════════════════════════════
+//  LOAD → 어드민 입력란에 현재 값 채우기
+//  (저장된 값이 있으면 저장값, 없으면 DOM에서 읽기)
+// ══════════════════════════════════════════════════
+function loadAdminFields() {
+  const d = loadFromStorage();
+
+  // Hero title
   const titleEl = document.querySelector('.hero-title');
   if (titleEl) {
     const spanEl = titleEl.querySelector('span');
-    const spanText = spanEl ? spanEl.textContent : '';
-    // Get text nodes only
-    let titleText = '';
-    titleEl.childNodes.forEach(n => {
-      if (n.nodeType === 3) titleText += n.textContent;
-    });
-    document.getElementById('edit-hero-title').value = titleText.replace(/\n/g,'').trim().replace(/\s+/g,' → ').replace(' → ',' → ');
-    // simpler: just get the full inner text minus span
-    const raw = titleEl.innerHTML.replace(/<span[^>]*>.*?<\/span>/,'').replace(/<br>/g,'\n').replace(/<[^>]+>/g,'').trim();
-    document.getElementById('edit-hero-title').value = raw;
-    document.getElementById('edit-hero-span').value = spanText;
+    document.getElementById('edit-hero-span').value =
+      d.heroSpan !== undefined ? d.heroSpan : (spanEl ? spanEl.textContent : '');
+    const raw = titleEl.innerHTML
+      .replace(/<span[^>]*>.*?<\/span>/,'')
+      .replace(/<br\s*\/?>/gi,'\n')
+      .replace(/<[^>]+>/g,'').trim();
+    document.getElementById('edit-hero-title').value =
+      d.heroTitle !== undefined ? d.heroTitle : raw;
   }
+
+  // Hero desc
   const descEl = document.querySelector('.hero-desc');
-  if (descEl) document.getElementById('edit-hero-desc').value = descEl.textContent.trim();
+  if (descEl) document.getElementById('edit-hero-desc').value =
+    d.heroDesc !== undefined ? d.heroDesc : descEl.textContent.trim();
 
-  // Cards
-  const cards = document.querySelectorAll('.hero-cards-row .hero-card');
-  if (cards[0]) {
-    document.getElementById('edit-card1-value').value = cards[0].querySelector('.hero-card-value')?.textContent.trim() || '';
-    document.getElementById('edit-card1-sub').value = cards[0].querySelector('.hero-card-sub')?.textContent.trim() || '';
-  }
-  if (cards[1]) {
-    document.getElementById('edit-card2-value').value = cards[1].querySelector('.hero-card-value')?.textContent.trim() || '';
-    document.getElementById('edit-card2-sub').value = cards[1].querySelector('.hero-card-sub')?.textContent.trim() || '';
-  }
-
-  // About paragraphs
+  // About
   const aboutPs = document.querySelectorAll('.about-text p');
-  if (aboutPs[0]) document.getElementById('edit-about-p1').value = aboutPs[0].textContent.trim();
-  if (aboutPs[1]) document.getElementById('edit-about-p2').value = aboutPs[1].textContent.trim();
-  if (aboutPs[2]) document.getElementById('edit-about-p3').value = aboutPs[2].textContent.trim();
+  document.getElementById('edit-about-p1').value = d.aboutP1 !== undefined ? d.aboutP1 : (aboutPs[0]?.textContent.trim()||'');
+  document.getElementById('edit-about-p2').value = d.aboutP2 !== undefined ? d.aboutP2 : (aboutPs[1]?.textContent.trim()||'');
+  document.getElementById('edit-about-p3').value = d.aboutP3 !== undefined ? d.aboutP3 : (aboutPs[2]?.textContent.trim()||'');
 
   // Contact
-  const contactItems = document.querySelectorAll('.contact-item');
-  if (contactItems[0]) document.getElementById('edit-website').value = contactItems[0].querySelector('.contact-item-value')?.textContent.trim() || '';
-  if (contactItems[1]) document.getElementById('edit-lecture-topics').value = contactItems[1].querySelector('.contact-item-value')?.textContent.trim() || '';
-  if (contactItems[2]) document.getElementById('edit-book').value = contactItems[2].querySelector('.contact-item-note')?.textContent.trim() || '';
+  const cItems = document.querySelectorAll('.contact-item');
+  document.getElementById('edit-website').value        = d.website       !== undefined ? d.website       : (cItems[0]?.querySelector('.contact-item-value')?.textContent.trim()||'');
+  document.getElementById('edit-lecture-topics').value = d.lectureTopics !== undefined ? d.lectureTopics : (cItems[1]?.querySelector('.contact-item-value')?.textContent.trim()||'');
+  document.getElementById('edit-book').value           = d.book          !== undefined ? d.book          : (cItems[2]?.querySelector('.contact-item-note')?.textContent.trim()||'');
 
   // Quote
-  const quoteEl = document.querySelector('.quote-text');
-  if (quoteEl) document.getElementById('edit-quote').value = quoteEl.textContent.trim();
+  const qEl = document.querySelector('.quote-text');
+  document.getElementById('edit-quote').value = d.quote !== undefined ? d.quote : (qEl?.textContent.trim()||'');
 
-  // SNS links
-  const yt = document.getElementById('sns-youtube');
-  const ig = document.getElementById('sns-instagram');
-  const nb = document.getElementById('sns-naver');
-  if (yt) document.getElementById('edit-sns-youtube').value = yt.dataset.url || '';
-  if (ig) document.getElementById('edit-sns-instagram').value = ig.dataset.url || '';
-  if (nb) document.getElementById('edit-sns-naver').value = nb.dataset.url || '';
+  // SNS
+  document.getElementById('edit-sns-youtube').value   = d.snsYoutube   || '';
+  document.getElementById('edit-sns-instagram').value = d.snsInstagram || '';
+  document.getElementById('edit-sns-naver').value     = d.snsNaver     || '';
+
+  // SNS preview opacity
+  document.getElementById('prev-youtube').style.opacity   = (d.snsYoutube   ) ? '1' : '0.35';
+  document.getElementById('prev-instagram').style.opacity = (d.snsInstagram ) ? '1' : '0.35';
+  document.getElementById('prev-naver').style.opacity     = (d.snsNaver     ) ? '1' : '0.35';
 }
 
-// ── APPLY PHOTO ──────────────────────────
+// ══════════════════════════════════════════════════
+//  APPLY PHOTO  → DOM 반영 + 저장
+// ══════════════════════════════════════════════════
 let newPhotoDataUrl = null;
 function previewPhoto(e) {
   const file = e.target.files[0];
@@ -1654,101 +1725,123 @@ function previewPhoto(e) {
 }
 function applyPhoto() {
   if (!newPhotoDataUrl) { alert('사진을 먼저 선택해주세요'); return; }
-  // Update all img tags with hero-photo or about-photo-frame img class
   document.querySelectorAll('.hero-photo, .about-photo-frame img').forEach(img => {
     img.src = newPhotoDataUrl;
   });
-  flashSuccess('applyPhotoBtn', '✓ 사진 적용 완료!');
+  saveToStorage({ photo: newPhotoDataUrl });
+  flashSuccess('applyPhotoBtn', '✓ 사진 저장 완료!');
 }
 
-// ── APPLY HERO ───────────────────────────
+// ══════════════════════════════════════════════════
+//  APPLY HERO  → DOM 반영 + 저장
+// ══════════════════════════════════════════════════
 function applyHero() {
-  const titleEl = document.querySelector('.hero-title');
   const titleLines = document.getElementById('edit-hero-title').value.trim();
-  const spanText = document.getElementById('edit-hero-span').value.trim();
+  const spanText   = document.getElementById('edit-hero-span').value.trim();
+  const descText   = document.getElementById('edit-hero-desc').value.trim();
+
+  const titleEl = document.querySelector('.hero-title');
   if (titleEl) {
     const lines = titleLines.split('\n').filter(Boolean);
-    titleEl.innerHTML = lines.map((l,i) => i < lines.length-1 ? l + '<br>' : l).join('') + '<br><span>' + spanText + '</span>';
+    titleEl.innerHTML = lines.map(l => l + '<br>').join('') + '<span>' + spanText + '</span>';
   }
   const descEl = document.querySelector('.hero-desc');
-  if (descEl) descEl.textContent = document.getElementById('edit-hero-desc').value;
+  if (descEl) descEl.textContent = descText;
 
-  const cards = document.querySelectorAll('.hero-cards-row .hero-card');
-  if (cards[0]) {
-    cards[0].querySelector('.hero-card-value').textContent = document.getElementById('edit-card1-value').value;
-    cards[0].querySelector('.hero-card-sub').textContent = document.getElementById('edit-card1-sub').value;
-  }
-  if (cards[1]) {
-    cards[1].querySelector('.hero-card-value').textContent = document.getElementById('edit-card2-value').value;
-    cards[1].querySelector('.hero-card-sub').textContent = document.getElementById('edit-card2-sub').value;
-  }
-  flashSuccess('applyHeroBtn', '✓ 메인 섹션 적용 완료!');
+  saveToStorage({ heroTitle: titleLines, heroSpan: spanText, heroDesc: descText });
+  flashSuccess('applyHeroBtn', '✓ 메인 섹션 저장 완료!');
 }
 
-// ── APPLY ABOUT ──────────────────────────
+// ══════════════════════════════════════════════════
+//  APPLY ABOUT  → DOM 반영 + 저장
+// ══════════════════════════════════════════════════
 function applyAbout() {
+  const p1 = document.getElementById('edit-about-p1').value;
+  const p2 = document.getElementById('edit-about-p2').value;
+  const p3 = document.getElementById('edit-about-p3').value;
   const ps = document.querySelectorAll('.about-text p');
-  if (ps[0]) ps[0].textContent = document.getElementById('edit-about-p1').value;
-  if (ps[1]) ps[1].textContent = document.getElementById('edit-about-p2').value;
-  if (ps[2]) ps[2].textContent = document.getElementById('edit-about-p3').value;
-  flashSuccess('applyAboutBtn', '✓ 소개 섹션 적용 완료!');
+  if (ps[0]) ps[0].textContent = p1;
+  if (ps[1]) ps[1].textContent = p2;
+  if (ps[2]) ps[2].textContent = p3;
+  saveToStorage({ aboutP1: p1, aboutP2: p2, aboutP3: p3 });
+  flashSuccess('applyAboutBtn', '✓ 소개 섹션 저장 완료!');
 }
 
-// ── APPLY CONTACT ─────────────────────────
+// ══════════════════════════════════════════════════
+//  APPLY CONTACT  → DOM 반영 + 저장
+// ══════════════════════════════════════════════════
 function applyContact() {
-  const contactItems = document.querySelectorAll('.contact-item');
-  if (contactItems[0]) contactItems[0].querySelector('.contact-item-value').textContent = document.getElementById('edit-website').value;
-  if (contactItems[1]) contactItems[1].querySelector('.contact-item-value').textContent = document.getElementById('edit-lecture-topics').value;
-  if (contactItems[2]) contactItems[2].querySelector('.contact-item-note').textContent = document.getElementById('edit-book').value;
-  const quoteEl = document.querySelector('.quote-text');
-  if (quoteEl) quoteEl.innerHTML = document.getElementById('edit-quote').value.replace(/\n/g,'<br>');
-  flashSuccess('applyContactBtn', '✓ 연락처 섹션 적용 완료!');
+  const website       = document.getElementById('edit-website').value;
+  const lectureTopics = document.getElementById('edit-lecture-topics').value;
+  const book          = document.getElementById('edit-book').value;
+  const quote         = document.getElementById('edit-quote').value;
+
+  const cItems = document.querySelectorAll('.contact-item');
+  if (cItems[0]) cItems[0].querySelector('.contact-item-value').textContent = website;
+  if (cItems[1]) cItems[1].querySelector('.contact-item-value').textContent = lectureTopics;
+  if (cItems[2]) cItems[2].querySelector('.contact-item-note').textContent  = book;
+  const qEl = document.querySelector('.quote-text');
+  if (qEl) qEl.innerHTML = quote.replace(/\n/g,'<br>');
+
+  saveToStorage({ website, lectureTopics, book, quote });
+  flashSuccess('applyContactBtn', '✓ 연락처 섹션 저장 완료!');
 }
 
-// ── APPLY SNS ────────────────────────────
+// ══════════════════════════════════════════════════
+//  APPLY SNS  → DOM 반영 + 저장
+// ══════════════════════════════════════════════════
 function applySns() {
-  const ytUrl  = document.getElementById('edit-sns-youtube').value.trim();
-  const igUrl  = document.getElementById('edit-sns-instagram').value.trim();
-  const nbUrl  = document.getElementById('edit-sns-naver').value.trim();
+  const ytUrl = document.getElementById('edit-sns-youtube').value.trim();
+  const igUrl = document.getElementById('edit-sns-instagram').value.trim();
+  const nbUrl = document.getElementById('edit-sns-naver').value.trim();
 
   function setLink(id, url) {
     const el = document.getElementById(id);
     if (!el) return;
     if (url) {
-      el.href = url;
-      el.dataset.url = url;
-      el.classList.remove('disabled');
+      el.href = url; el.dataset.url = url; el.classList.remove('disabled');
     } else {
-      el.href = '#';
-      el.dataset.url = '';
-      el.classList.add('disabled');
+      el.href = '#'; el.dataset.url = ''; el.classList.add('disabled');
     }
   }
   setLink('sns-youtube',   ytUrl);
   setLink('sns-instagram', igUrl);
   setLink('sns-naver',     nbUrl);
 
-  // update previews
   document.getElementById('prev-youtube').style.opacity   = ytUrl ? '1' : '0.35';
   document.getElementById('prev-instagram').style.opacity = igUrl ? '1' : '0.35';
   document.getElementById('prev-naver').style.opacity     = nbUrl ? '1' : '0.35';
 
-  flashSuccess('applySnsBtn', '✓ SNS 링크 적용 완료!');
+  saveToStorage({ snsYoutube: ytUrl, snsInstagram: igUrl, snsNaver: nbUrl });
+  flashSuccess('applySnsBtn', '✓ SNS 링크 저장 완료!');
 }
 
-// ── HELPER ───────────────────────────────
+// ══════════════════════════════════════════════════
+//  HELPER
+// ══════════════════════════════════════════════════
 function flashSuccess(btnId, msg) {
   const btn = document.getElementById(btnId);
+  if (!btn) return;
   const orig = btn.textContent;
   btn.textContent = msg;
   btn.classList.add('success');
-  setTimeout(() => {
-    btn.textContent = orig;
-    btn.classList.remove('success');
-  }, 2000);
+  setTimeout(() => { btn.textContent = orig; btn.classList.remove('success'); }, 2200);
 }
+
+// ══════════════════════════════════════════════════
+//  INIT — 페이지 로드 시 저장된 데이터 자동 복원
+// ══════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', function() {
+  applySavedData();
+  // SNS 초기 disabled (저장값 없을 때)
+  ['sns-youtube','sns-instagram','sns-naver'].forEach(function(id) {
+    const el = document.getElementById(id);
+    if (el && !el.dataset.url && el.getAttribute('href') === '#') {
+      el.classList.add('disabled');
+    }
+  });
+});
 </script>
 
 </body>
 </html>
-
